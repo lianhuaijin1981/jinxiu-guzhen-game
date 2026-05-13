@@ -1,0 +1,11 @@
+[
+  {
+    "configId":1,
+    "energyMax":50,
+    "energyRecoverTime":180,
+    "genCoolBase":30,
+    "genCoolMid":300,
+    "dailyAdvNum":20,
+    "prestigeLevel":"0,100,300,600,1000,1500"
+  }
+]
