@@ -1,118 +1,124 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 
-// ============================================================
-// 严格按GDD执行：《锦绣古镇：汉服织造录》v4.0
-// 大靖王朝世界观 / 沈绾归乡→发现山河图→立志复原
-// ============================================================
+// ==========================================
+// 锦绣古镇 v5.0 — 严格GDD闭环
+// 绣坊基地 ↔ 游历合成 ↔ 完成返回
+// ==========================================
 
-// ---- 7大场景（GDD第四章） ----
 const SCENES = [
-  { id: 1, name: '江南古镇', sub: '绣坊总基地',   color: '#7ecfa8', prestige: 0,    bg: '/assets/scenes/zhuangxiu_main.jpg', desc: '苏南水乡，沈绾家族绣坊所在' },
-  { id: 2, name: '泰山',     sub: '五岳独尊',     color: '#c9a96e', prestige: 100,  bg: '/assets/scenes/scene_taishan.jpg',  desc: '齐鲁大地，封禅之地' },
-  { id: 3, name: '西湖',     sub: '西子湖畔',     color: '#6a9eb8', prestige: 300,  bg: '/assets/scenes/scene_xihu.jpg',     desc: '欲把西湖比西子' },
-  { id: 4, name: '长安',     sub: '大唐盛世',     color: '#d4574a', prestige: 600,  bg: '/assets/scenes/scene_changan.jpg',  desc: '万国来朝，锦绣长安' },
-  { id: 5, name: '万里长城', sub: '雄关万里',     color: '#8b7355', prestige: 1000, bg: '/assets/scenes/scene_greatwall.jpg',desc: '气吞山河，万里雄关' },
-  { id: 6, name: '黄山',     sub: '奇松云海',     color: '#4a6741', prestige: 1500, bg: '/assets/scenes/scene_huangshan.jpg',desc: '天下无山，观止矣' },
-  { id: 7, name: '青城山',   sub: '道法自然',     color: '#5a7a6a', prestige: 1500, bg: '/assets/scenes/scene_qingcheng.jpg',desc: '幽甲天下，道法自然' },
+  { id: 1, name: '江南古镇', sub: '绣坊总基地', color: '#7ecfa8', prestige: 0,    items: ['silk-cocoon','raw-silk','silk-thread','plain-satin','brocade'] },
+  { id: 2, name: '泰山',     sub: '五岳独尊',   color: '#c9a96e', prestige: 100,  items: ['stone','pine','rubbing','ink','jade-book'] },
+  { id: 3, name: '西湖',     sub: '西子湖畔',   color: '#6a9eb8', prestige: 300,  items: ['tea','petal','willow','cake','fan'] },
 ];
 
-// ---- 江南古镇道具合成链（GDD：每场景独立专属链） ----
-const ITEMS: Record<string, { name: string; emoji: string; level: number; color: string }> = {
+// 道具定义
+const ALL_ITEMS: Record<string, { name: string; emoji: string; level: number; color: string }> = {
+  // 江南
   'silk-cocoon':  { name: '蚕茧', emoji: '🌿', level: 1, color: '#d4c4a8' },
   'raw-silk':     { name: '生丝', emoji: '🧵', level: 2, color: '#e8dcc8' },
   'silk-thread':  { name: '蚕丝线', emoji: '🎀', level: 3, color: '#c9a96e' },
   'plain-satin':  { name: '素缎', emoji: '🧣', level: 4, color: '#d4b87a' },
   'brocade':      { name: '织锦', emoji: '🏮', level: 5, color: '#b87333' },
+  // 泰山
+  'stone':        { name: '泰山石', emoji: '🪨', level: 1, color: '#999' },
+  'pine':         { name: '松枝', emoji: '🌲', level: 2, color: '#6a8a5a' },
+  'rubbing':      { name: '拓片', emoji: '📜', level: 3, color: '#c9a96e' },
+  'ink':          { name: '松烟墨', emoji: '⚫', level: 4, color: '#555' },
+  'jade-book':    { name: '封禅玉册', emoji: '📿', level: 5, color: '#7ecfa8' },
+  // 西湖
+  'tea':          { name: '龙井茶叶', emoji: '🍵', level: 1, color: '#7ecfa8' },
+  'petal':        { name: '荷瓣', emoji: '🌸', level: 2, color: '#e8a0c8' },
+  'willow':       { name: '柳枝', emoji: '🌿', level: 3, color: '#6a9e5a' },
+  'cake':         { name: '茶饼', emoji: '🫖', level: 4, color: '#c9a96e' },
+  'fan':          { name: '刺绣扇面', emoji: '🪭', level: 5, color: '#d47274' },
 };
 
-// 严格Merge-2：同级合成
-const COMPOSE_MAP: Record<string, string> = {
-  'silk-cocoon': 'raw-silk',
-  'raw-silk': 'silk-thread',
-  'silk-thread': 'plain-satin',
-  'plain-satin': 'brocade',
+// 合成链：每场景5级
+const COMPOSE: Record<string, Record<string, string>> = {
+  1: { 'silk-cocoon': 'raw-silk', 'raw-silk': 'silk-thread', 'silk-thread': 'plain-satin', 'plain-satin': 'brocade' },
+  2: { 'stone': 'pine', 'pine': 'rubbing', 'rubbing': 'ink', 'ink': 'jade-book' },
+  3: { 'tea': 'petal', 'petal': 'willow', 'willow': 'cake', 'cake': 'fan' },
 };
 
-// ---- 剧情（GDD第二章：启程篇严格原文） ----
+// 剧情
 const STORY = [
-  { bg: '/assets/scenes/scene_jiangnan.jpg', text: '大靖王朝年间，华夏大地山川秀美、文脉昌盛。',                                                     name: '旁白', img: null },
-  { bg: '/assets/scenes/scene_jiangnan.jpg', text: '世间存有一卷《山河锦绣图》，绘遍全国名山大川、非遗织造技艺与地域人文。',               name: '旁白', img: null },
-  { bg: '/assets/scenes/scene_jiangnan.jpg', text: '后历经战乱，古卷散落各地，山河文脉日渐凋零。',                                                         name: '旁白', img: null },
-  { bg: '/assets/scenes/scene_jiangnan.jpg', text: '大靖历三百二十七年，江南汉服织造世家传人沈绾，因家族变故归乡。',                         name: '旁白', img: '/assets/characters/shenwan_guibi.png' },
-  { bg: '/assets/scenes/zhuangxiu_main.jpg',  text: '祖母临终前，将一只檀木匣子交到她手中……',                                                             name: '旁白', img: '/assets/characters/shenwan_guibi.png' },
-  { bg: '/assets/scenes/zhuangxiu_main.jpg',  text: '（打开木匣）这是……《山河锦绣图》？！可为何如此残破？',                                               name: '沈绾', img: '/assets/characters/shenwan_guibi.png' },
-  { bg: '/assets/scenes/zhuangxiu_main.jpg',  text: '祖母曾言，此图记载华夏七大胜景的织造秘法。如今图卷碎裂，各地文脉将彻底断绝……',       name: '沈绾', img: '/assets/characters/shenwan_guibi.png' },
-  { bg: '/assets/scenes/zhuangxiu_main.jpg',  text: '我沈绾在此立誓：走遍万里山河，收集七处残卷，复原锦绣图，传承华夏织造文脉！',         name: '沈绾', img: '/assets/characters/shenwan_guibi.png' },
-  { bg: '/assets/scenes/zhuangxiu_main.jpg',  text: '重启古镇绣坊，从江南启程，开启游历之路！',                                                             name: '沈绾', img: '/assets/characters/shenwan_guibi.png' },
-  { bg: '/assets/scenes/zhuangxiu_main.jpg',  text: '【教学】点击选中一个蚕茧，再点击另一个蚕茧，合成更高阶的道具。',                         name: '系统', img: null },
+  { spk: '旁白',  txt: '大靖王朝年间，华夏大地山川秀美、文脉昌盛。世间存有一卷《山河锦绣图》，绘遍全国名山大川、非遗织造技艺与地域人文。', img: null },
+  { spk: '旁白',  txt: '后历经战乱，古卷散落各地，山河文脉日渐凋零。', img: null },
+  { spk: '旁白',  txt: '大靖历三百二十七年，江南汉服织造世家传人沈绾，因家族变故归乡。祖母临终前，将一只檀木匣子交到她手中……', img: '/assets/characters/shenwan_guibi.png' },
+  { spk: '沈绾',   txt: '（打开木匣）这是……《山河锦绣图》？！可为何如此残破？', img: '/assets/characters/shenwan_guibi.png' },
+  { spk: '沈绾',   txt: '祖母曾言，此图记载华夏七大胜景的织造秘法。如今图卷碎裂，各地文脉将彻底断绝……', img: '/assets/characters/shenwan_guibi.png' },
+  { spk: '沈绾',   txt: '我沈绾在此立誓：走遍万里山河，收集七处残卷，复原锦绣图，传承华夏织造文脉！重启古镇绣坊，开启游历之路！', img: '/assets/characters/shenwan_guibi.png' },
 ];
 
-// ---- NPC（GDD第五章严格设定） ----
-const NPCS: Record<number, { name: string; title: string; dialogue: string; img: string }> = {
-  1: { name: '孔伋',    title: '子思', dialogue: '儒家之道，在于传承文脉。姑娘此来泰山，可是为寻访封禅之礼？',       img: '/assets/characters/npc_kongji.png' },
-  2: { name: '鲁班',    title: '公输班', dialogue: '技艺之道，在于精益求精。这岱庙修缮，需得用心。',                 img: '/assets/characters/npc_luban.png' },
-  3: { name: '苏轼',    title: '东坡居士', dialogue: '欲把西湖比西子，淡妆浓抹总相宜。姑娘可懂这西湖之美？',         img: '/assets/characters/npc_sushi.png' },
-  4: { name: '李白',    title: '诗仙', dialogue: '黄河之水天上来，奔流到海不复回。姑娘可愿同饮一杯？',             img: '/assets/characters/npc_libai.png' },
-  5: { name: '杨玉环',  title: '贵妃', dialogue: '云想衣裳花想容，春风拂槛露华浓。织造之美，本宫最懂。',           img: '/assets/characters/npc_yangyuhuan.png' },
-  6: { name: '戚继光',  title: '戚将军', dialogue: '保家卫国，乃男儿本分。长城之上，不容外敌踏足！',                 img: '/assets/characters/npc_qijiguang.png' },
-  7: { name: '张道陵',  title: '张天师', dialogue: '道法自然，心静则明。姑娘可愿入我道门，修身养性？',               img: '/assets/characters/npc_zhangdaoling.png' },
-};
+// NPC
+const NPCS = [
+  { id: 1, name: '孔伋',   title: '子思',     scene: 2, dialogue: '儒家之道，在于传承文脉。姑娘此来泰山，可是为寻访封禅之礼？' },
+  { id: 2, name: '苏轼',   title: '东坡居士', scene: 3, dialogue: '欲把西湖比西子，淡妆浓抹总相宜。姑娘可懂这西湖之美？' },
+];
 
-// ============================================================
-// 游戏引擎（严格按GDD第三章）
-// ============================================================
+// ==========================================
+// 引擎
+// ==========================================
 class Engine {
-  board: (string | null)[][];
-  rows = 6;
-  cols = 5;
-  energy = 50;
-  maxEnergy = 50;
-  coin = 500;
-  silver = 30;
-  prestige = 0;
-  currentScene = 1;
-  selected: { r: number; c: number } | null = null;
-  sceneRepair: Record<number, number> = {};
+  // 绣坊基地状态
+  coin = 500; silver = 30; prestige = 0; energy = 50; maxEnergy = 50;
+  sceneRepair: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
   unlockedScenes = [1];
-  orders: { id: number; item: string; need: number; reward: number; done: boolean }[] = [];
-  dialoguesUnlocked: number[] = [];
+  scrollPieces: Record<number, number> = { 1: 0, 2: 0, 3: 0 }; // 每个场景的图鉴残卷收集
+  totalComposes = 0;
+
+  // 游历状态（小游戏内）
+  inTravel = false;
+  travelScene = 1;
+  board: (string | null)[][] = Array(6).fill(null).map(() => Array(5).fill(null));
+  selected: { r: number; c: number } | null = null;
+  travelTarget = { item: '', count: 0, collected: 0 }; // 游历目标
+  travelOrdersCompleted = 0;
   onUpdate?: () => void;
 
-  constructor() {
-    this.board = Array(this.rows).fill(null).map(() => Array(this.cols).fill(null));
-    this.fillBoard();
-    this.orders = this.genOrders();
-    this.dialoguesUnlocked = [1];
-    // 自动恢复心力
-    setInterval(() => this.recoverEnergy(), 3000);
-    // 自动产出
-    setInterval(() => this.autoGenerate(), 15000);
+  // 定时器
+  private _timer: ReturnType<typeof setInterval> | null = null;
+
+  constructor() { this.resetBoard(1); }
+
+  // 开始游历某场景
+  startTravel(sceneId: number) {
+    if (!this.unlockedScenes.includes(sceneId)) return false;
+    this.inTravel = true;
+    this.travelScene = sceneId;
+    this.travelOrdersCompleted = 0;
+    // 设置游历目标：收集场景最高阶道具
+    const topItem = SCENES.find(s => s.id === sceneId)!.items[4];
+    this.travelTarget = { item: topItem, count: 2, collected: 0 };
+    this.resetBoard(sceneId);
+    this._timer = setInterval(() => this.autoGen(), 12000);
+    return true;
   }
 
-  fillBoard() {
-    for (let r = 0; r < this.rows; r++)
-      for (let c = 0; c < this.cols; c++)
-        if (Math.random() > 0.3) this.board[r][c] = 'silk-cocoon';
+  // 结束游历，返回绣坊
+  endTravel() {
+    this.inTravel = false;
+    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    this.selected = null;
   }
 
-  autoGenerate() {
+  resetBoard(sceneId: number) {
+    const baseItem = SCENES.find(s => s.id === sceneId)!.items[0];
+    this.board = Array(6).fill(null).map(() => Array(5).fill(null));
+    for (let r = 0; r < 6; r++) for (let c = 0; c < 5; c++) if (Math.random() > 0.3) this.board[r][c] = baseItem;
+  }
+
+  autoGen() {
+    if (!this.inTravel) return;
+    const baseItem = SCENES.find(s => s.id === this.travelScene)!.items[0];
     const empty: { r: number; c: number }[] = [];
-    for (let r = 0; r < this.rows; r++)
-      for (let c = 0; c < this.cols; c++)
-        if (!this.board[r][c]) empty.push({ r, c });
-    if (empty.length > 0) {
-      const p = empty[Math.floor(Math.random() * empty.length)];
-      this.board[p.r][p.c] = 'silk-cocoon';
-      this.onUpdate?.();
-    }
+    for (let r = 0; r < 6; r++) for (let c = 0; c < 5; c++) if (!this.board[r][c]) empty.push({ r, c });
+    if (empty.length > 0) { const p = empty[Math.floor(Math.random() * empty.length)]; this.board[p.r][p.c] = baseItem; }
   }
 
-  recoverEnergy() {
-    if (this.energy < this.maxEnergy) { this.energy++; this.onUpdate?.(); }
-  }
-
-  clickCell(r: number, c: number): { ok: boolean; fx?: { r: number; c: number; lv: number } } {
+  click(r: number, c: number): { ok: boolean; fx?: { r: number; c: number; lv: number }; questDone?: boolean } {
+    if (!this.inTravel) return { ok: false };
     const item = this.board[r][c];
     if (!item) { this.selected = null; return { ok: false }; }
     if (this.energy < 1) { this.selected = null; return { ok: false }; }
@@ -121,18 +127,22 @@ class Engine {
       const { r: sr, c: sc } = this.selected;
       if (sr === r && sc === c) { this.selected = null; return { ok: false }; }
       const src = this.board[sr][sc];
-      // 严格Merge-2：同等级同类道具合成
-      if (src && src === item && COMPOSE_MAP[src]) {
-        const target = COMPOSE_MAP[src];
+      const chain = COMPOSE[this.travelScene];
+      if (src && src === item && chain && chain[src]) {
+        const target = chain[src];
         this.board[r][c] = target;
         this.board[sr][sc] = null;
         this.selected = null;
         this.energy--;
         this.coin += 30;
-        this.prestige += 2;
-        this.checkUnlock();
+        this.totalComposes++;
+        // 检查是否达成游历目标
+        if (target === this.travelTarget.item) {
+          this.travelTarget.collected++;
+        }
+        const questDone = this.checkTravelComplete();
         this.onUpdate?.();
-        return { ok: true, fx: { r, c, lv: ITEMS[target].level } };
+        return { ok: true, fx: { r, c, lv: ALL_ITEMS[target].level }, questDone };
       }
       this.selected = { r, c };
       return { ok: false };
@@ -141,326 +151,371 @@ class Engine {
     return { ok: false };
   }
 
-  count(id: string) {
+  // 检查游历是否完成
+  checkTravelComplete(): boolean {
+    // 目标1：收集指定数量最高阶道具
+    if (this.travelTarget.collected >= this.travelTarget.count) return true;
+    // 目标2：或完成3笔订单
+    if (this.travelOrdersCompleted >= 3) return true;
+    return false;
+  }
+
+  count(item: string) {
     let n = 0;
-    for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) if (this.board[r][c] === id) n++;
+    for (let r = 0; r < 6; r++) for (let c = 0; c < 5; c++) if (this.board[r][c] === item) n++;
     return n;
   }
 
-  deliverOrder(oid: number) {
-    const o = this.orders.find(x => x.id === oid);
-    if (!o || o.done) return false;
-    if (this.count(o.item) < o.need) return false;
-    let rem = o.need;
-    for (let r = 0; r < this.rows && rem > 0; r++)
-      for (let c = 0; c < this.cols && rem > 0; c++)
-        if (this.board[r][c] === o.item) { this.board[r][c] = null; rem--; }
-    this.coin += o.reward;
-    this.prestige += 15;
-    o.done = true;
-    this.checkUnlock();
-    // 刷新订单
-    setTimeout(() => { o.done = false; o.item = this.randItem(); o.need = [3, 2, 1][Math.floor(Math.random() * 3)]; o.reward = Math.floor(Math.random() * 500) + 200; this.onUpdate?.(); }, 2000);
-    this.onUpdate?.();
-    return true;
-  }
-
-  randItem() {
-    const keys = Object.keys(ITEMS);
-    return keys[Math.floor(Math.random() * keys.length)];
-  }
-
-  genOrders() {
-    return [
-      { id: 1, item: 'silk-cocoon', need: 5, reward: 200, done: false },
-      { id: 2, item: 'raw-silk',    need: 3, reward: 500, done: false },
-      { id: 3, item: 'silk-thread', need: 2, reward: 800, done: false },
-      { id: 4, item: 'plain-satin', need: 1, reward: 1500, done: false },
-    ];
-  }
-
-  // 修缮：破败→修缮→完工（GDD严格三阶段）
-  repairScene(sid: number) {
-    const cur = this.sceneRepair[sid] || 0;
-    if (cur >= 3) return false;
-    const costs = [100, 300, 800];
-    if (this.coin < costs[cur]) return false;
-    this.coin -= costs[cur];
-    this.sceneRepair[sid] = cur + 1;
-    this.prestige += 20;
-    this.checkUnlock();
-    this.onUpdate?.();
-    return true;
-  }
-
-  checkUnlock() {
+  // 完成游历 - 获得奖励
+  completeTravel() {
+    const sid = this.travelScene;
+    this.scrollPieces[sid] = Math.min(3, (this.scrollPieces[sid] || 0) + 1);
+    this.prestige += 30;
+    this.coin += 200;
+    // 检查场景修缮解锁
+    if (this.scrollPieces[sid] >= 1 && this.sceneRepair[sid] < 1) this.sceneRepair[sid] = 1;
+    // 检查新场景解锁
     for (const s of SCENES) {
       if (!this.unlockedScenes.includes(s.id) && this.prestige >= s.prestige) {
         this.unlockedScenes.push(s.id);
       }
     }
+    this.endTravel();
+    this.onUpdate?.();
   }
 
-  getEnergy(type: number) {
-    const add = type === 1 ? 20 : 30;
-    this.energy = Math.min(this.maxEnergy, this.energy + add);
+  // 绣坊：修缮场景
+  repair(sceneId: number): boolean {
+    const cur = this.sceneRepair[sceneId] || 0;
+    if (cur >= 3) return false;
+    const costs = [100, 300, 800];
+    if (this.coin < costs[cur]) return false;
+    this.coin -= costs[cur];
+    this.sceneRepair[sceneId] = cur + 1;
+    this.prestige += 20;
     this.onUpdate?.();
+    return true;
+  }
+
+  // 绣坊：NPC对话解锁
+  getNpcForScene(sceneId: number) {
+    return NPCS.filter(n => n.scene === sceneId);
+  }
+
+  recoverEnergy() {
+    if (this.energy < this.maxEnergy) { this.energy++; this.onUpdate?.(); }
+  }
+
+  getSceneItem(sceneId: number, level: number) {
+    return ALL_ITEMS[SCENES.find(s => s.id === sceneId)!.items[level - 1]];
   }
 }
 
-// ============================================================
+// ==========================================
 // 主组件
-// ============================================================
+// ==========================================
 type Screen = 'title' | 'story' | 'game';
-type Tab = 'home' | 'scene' | 'order' | 'scroll';
+type GameView = 'home' | 'scroll'; // 绣坊基地的视图
 
 export default function App() {
-  const [game] = useState(() => new Engine());
-  const [, setTick] = useState(0);
+  const [g] = useState(() => new Engine());
+  const [, setT] = useState(0);
   const [screen, setScreen] = useState<Screen>('title');
-  const [storyIdx, setStoryIdx] = useState(0);
-  const [tab, setTab] = useState<Tab>('home');
+  const [si, setSi] = useState(0); // story index
+  const [view, setView] = useState<GameView>('home'); // 绣坊基地视图
   const [fx, setFx] = useState<{ r: number; c: number; lv: number } | null>(null);
   const [toast, setToast] = useState('');
+  const [showComplete, setShowComplete] = useState(false); // 游历完成弹窗
   const [npcDlg, setNpcDlg] = useState<number | null>(null);
   const tRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const refresh = useCallback(() => setTick(t => t + 1), []);
+  const r = useCallback(() => setT(t => t + 1), []);
 
-  useEffect(() => { game.onUpdate = refresh; }, [game, refresh]);
+  useEffect(() => { g.onUpdate = r; const iv = setInterval(() => g.recoverEnergy(), 3000); return () => clearInterval(iv); }, [g, r]);
 
-  const msg = (m: string) => {
-    setToast(m);
-    if (tRef.current) clearTimeout(tRef.current);
-    tRef.current = setTimeout(() => setToast(''), 2500);
-  };
+  const msg = (m: string) => { setToast(m); if (tRef.current) clearTimeout(tRef.current); tRef.current = setTimeout(() => setToast(''), 2500); };
 
-  const onCell = (r: number, c: number) => {
+  const onCell = (row: number, col: number) => {
     if (fx) return;
-    const res = game.clickCell(r, c);
-    refresh();
+    const res = g.click(row, col);
+    r();
     if (res.ok && res.fx) {
       setFx(res.fx);
       setTimeout(() => setFx(null), 800);
-      const item = ITEMS[Object.keys(ITEMS).find(k => ITEMS[k].level === res.fx!.lv)!];
-      msg(`✨ 合成${item?.name || '成功'}！+30铜钱 +2声望`);
+      const it = ALL_ITEMS[Object.keys(ALL_ITEMS).find(k => ALL_ITEMS[k].level === res.fx!.lv)!];
+      msg(`✨ 合成${it?.name || '成功'}！+30铜钱 -1心力`);
+      if (res.questDone) { setTimeout(() => setShowComplete(true), 500); }
     }
   };
 
-  const scene = SCENES.find(s => s.id === game.currentScene)!;
+  // 开始游历
+  const startTravel = (sid: number) => {
+    if (g.startTravel(sid)) {
+      msg(`🗺️ 进入${SCENES.find(s => s.id === sid)!.name}，完成游历目标收集图鉴残卷！`);
+      r();
+    } else { msg('🔒 场景未解锁'); }
+  };
 
-  // ========== 标题画面 ==========
+  // 完成游历
+  const completeTravel = () => {
+    const sid = g.travelScene;
+    g.completeTravel();
+    setShowComplete(false);
+    msg(`🎉 ${SCENES.find(s => s.id === sid)!.name}游历完成！获得图鉴残卷×1 +200铜钱 +30声望`);
+    r();
+  };
+
+  // 提前退出游历（无奖励）
+  const quitTravel = () => {
+    g.endTravel();
+    msg('已返回绣坊（提前退出无奖励）');
+    r();
+  };
+
+  const scene = SCENES.find(s => s.id === g.travelScene)!;
+
+  // ============ 标题 ============
   if (screen === 'title') return (
-    <div className="title-screen-v4">
-      <div className="title-bg" style={{ backgroundImage: `url(${scene.bg})` }} />
-      <div className="title-overlay-v4" />
-      <div className="title-content-v4">
-        <img src="/assets/characters/shenwan_guibi.png" className="title-shenwan" alt="沈绾" />
-        <h1 className="title-text-v4">锦绣古镇</h1>
-        <p className="title-sub-v4">汉服织造录</p>
-        <p className="title-slogan">织汉服锦绣 · 游万里山河 · 承华夏文脉</p>
-        <button className="title-btn-v4" onClick={() => setScreen('story')}>✦ 开启旅程</button>
-        <p className="title-ver">大靖王朝 · 山河文旅版</p>
+    <div className="v5-title">
+      <div className="v5-title-bg" style={{ backgroundImage: 'url(/assets/scenes/scene_jiangnan.jpg)' }} />
+      <div className="v5-title-ov" />
+      <div className="v5-title-ct">
+        <img src="/assets/characters/shenwan_guibi.png" className="v5-title-char" alt="沈绾" />
+        <h1>锦绣古镇</h1>
+        <p className="v5-sub">汉服织造录</p>
+        <p className="v5-slogan">织汉服锦绣 · 游万里山河 · 承华夏文脉</p>
+        <button className="v5-start" onClick={() => setScreen('story')}>✦ 开启旅程</button>
       </div>
     </div>
   );
 
-  // ========== 剧情画面 ==========
+  // ============ 剧情 ============
   if (screen === 'story') {
-    const line = STORY[storyIdx];
+    const line = STORY[si];
     return (
-      <div className="story-screen-v4">
-        <div className="story-bg" style={{ backgroundImage: `url(${line.bg})` }} />
-        <div className="story-overlay-v4" />
-        <div className="story-content-v4">
-          {line.img && <img src={line.img} className="story-char" alt={line.name} />}
-          <div className="story-box">
-            <p className="story-name">{line.name}</p>
-            <p className="story-txt">{line.text}</p>
+      <div className="v5-story">
+        <div className="v5-s-bg" style={{ backgroundImage: 'url(/assets/scenes/zhuangxiu_main.jpg)' }} />
+        <div className="v5-s-ov" />
+        <div className="v5-s-ct">
+          {line.img && <img src={line.img} className="v5-s-char" alt="" />}
+          <div className="v5-s-box">
+            <p className="v5-s-name">{line.spk}</p>
+            <p className="v5-s-txt">{line.txt}</p>
           </div>
-          <div className="story-btns">
-            <button className="story-next" onClick={() => storyIdx < STORY.length - 1 ? setStoryIdx(storyIdx + 1) : setScreen('game')}>
-              {storyIdx < STORY.length - 1 ? '▶ 继续' : '▶ 进入绣坊'}
-            </button>
-            <button className="story-skip" onClick={() => setScreen('game')}>跳过剧情</button>
+          <div className="v5-s-btns">
+            <button onClick={() => si < STORY.length - 1 ? setSi(si + 1) : setScreen('game')}>{si < STORY.length - 1 ? '▶ 继续' : '▶ 进入绣坊'}</button>
+            <button className="skip" onClick={() => setScreen('game')}>跳过</button>
           </div>
-          <div className="story-dots">{STORY.map((_, i) => <span key={i} className={i === storyIdx ? 'on' : ''} />)}</div>
+          <div className="v5-dots">{STORY.map((_, i) => <span key={i} className={i === si ? 'on' : ''} />)}</div>
         </div>
       </div>
     );
   }
 
-  // ========== 主游戏 ==========
+  // ============ 主游戏 ============
   return (
-    <div className="game-v4">
+    <div className="v5-game">
       {/* 顶部资源栏 */}
-      <div className="top-bar-v4">
-        <div className="res-group">
-          <span className="res">❤️ {game.energy}/{game.maxEnergy}</span>
-          <span className="res">🪙 {game.coin}</span>
-          <span className="res">💎 {game.silver}</span>
-          <span className="res">⭐ {game.prestige}</span>
+      <div className="v5-top">
+        <div className="v5-res">
+          <span>❤️ {g.energy}/{g.maxEnergy}</span>
+          <span>🪙 {g.coin}</span>
+          <span>💎 {g.silver}</span>
+          <span>⭐ {g.prestige}</span>
         </div>
-        <button className="energy-btn" onClick={() => { game.getEnergy(1); msg('❤️ 心力已恢复'); }}>+</button>
+        {!g.inTravel && (
+          <div className="v5-scene-badge" style={{ background: '#7ecfa822', color: '#7ecfa8' }}>🏘️ 沈氏绣坊</div>
+        )}
+        {g.inTravel && (
+          <div className="v5-scene-badge" style={{ background: scene.color + '22', color: scene.color }}>🗺️ 游历·{scene.name}</div>
+        )}
       </div>
 
-      {/* 场景标题 */}
-      <div className="scene-bar" style={{ background: scene.color + '18', borderColor: scene.color + '40' }}>
-        <span style={{ color: scene.color }}>📍 {scene.name} · {scene.sub}</span>
-      </div>
+      {/* ====== 游历中：合成小游戏 ====== */}
+      {g.inTravel && (
+        <div className="v5-travel">
+          {/* 游历目标 */}
+          <div className="v5-target">
+            <span className="v5-target-label">🎯 游历目标</span>
+            <span>收集 {ALL_ITEMS[g.travelTarget.item]?.name || ''} {g.travelTarget.collected}/{g.travelTarget.count}</span>
+            <div className="v5-target-bar"><div className="v5-target-fill" style={{ width: `${Math.min(100, (g.travelTarget.collected / g.travelTarget.count) * 100)}%` }} /></div>
+          </div>
 
-      {/* 内容区 */}
-      <div className="content-v4">
-
-        {/* 绣坊主页 */}
-        {tab === 'home' && (
-          <div className="home-panel">
-            {/* 周庄绣坊全景 */}
-            <div className="zhuangxiu-view">
-              <img src="/assets/scenes/zhuangxiu_main.jpg" className="zhuangxiu-img" alt="绣坊" />
-              <div className="zhuangxiu-overlay" />
-              <div className="zhuangxiu-label">
-                <span className="zx-name">🏘️ 沈氏绣坊</span>
-                <span className="zx-desc">苏南水乡 · 多层沿河而建</span>
-              </div>
+          {/* 场景背景+棋盘 */}
+          <div className="v5-board-wrap" style={{ backgroundImage: `url(${scene.id === 1 ? '/assets/scenes/zhuangxiu_main.jpg' : scene.id === 2 ? '/assets/scenes/scene_taishan.jpg' : '/assets/scenes/scene_xihu.jpg'})` }}>
+            <div className="v5-board-ov" />
+            <div className="v5-board">
+              {g.board.map((row, ri) => (
+                <div key={ri} className="v5-row">
+                  {row.map((cell, ci) => {
+                    const sel = g.selected?.r === ri && g.selected?.c === ci;
+                    const isFx = fx?.r === ri && fx?.c === ci;
+                    const it = cell ? ALL_ITEMS[cell] : null;
+                    return (
+                      <div key={ci} className={`v5-cell ${sel ? 'sel' : ''} ${isFx ? `fx${it?.level || 1}` : ''} ${!it ? 'empty' : ''}`}
+                        onClick={() => onCell(ri, ci)}>
+                        {it && <><span className="v5-emoji" style={{ color: it.color }}>{it.emoji}</span>
+                          {isFx && <div className="v5-burst">
+                            {Array.from({ length: 8 }).map((_, i) => (
+                              <span key={i} className="v5-ptcl" style={{ '--a': `${i * 45}deg`, '--c': it.color } as React.CSSProperties} />
+                            ))}
+                            <span className="v5-fxtxt">合成{it.name}!</span>
+                          </div>}</>}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
+          </div>
 
-            {/* 合成棋盘 */}
-            <div className="board-wrap">
-              <div className="board-v4">
-                {game.board.map((row, ri) => (
-                  <div key={ri} className="board-row-v4">
-                    {row.map((cell, ci) => {
-                      const sel = game.selected?.r === ri && game.selected?.c === ci;
-                      const isFx = fx?.r === ri && fx?.c === ci;
-                      const it = cell ? ITEMS[cell] : null;
-                      return (
-                        <div key={ci} className={`cell-v4 ${sel ? 'sel' : ''} ${isFx ? `fx${it?.level || 1}` : ''} ${!it ? 'empty' : ''}`}
-                          onClick={() => onCell(ri, ci)}>
-                          {it && <><span className="cell-emoji-v4" style={{ color: it.color }}>{it.emoji}</span>
-                            {isFx && <div className="burst">{Array.from({ length: 8 }).map((_, i) => (
-                              <span key={i} className="ptcl" style={{ '--a': `${i * 45}deg`, '--c': it.color } as React.CSSProperties} />
-                            ))}<span className="fx-txt">合成{it.name}!</span></div>}</>}
+          <p className="v5-hint">
+            {g.selected ? '🔵 再点一个相同的道具合成' : '👆 点击选中道具，再点同类合成（-1心力）'}
+          </p>
+
+          {/* 退出按钮 */}
+          <button className="v5-quit" onClick={quitTravel}>↩ 返回绣坊</button>
+        </div>
+      )}
+
+      {/* ====== 绣坊基地 ====== */}
+      {!g.inTravel && (
+        <div className="v5-home">
+          {view === 'home' && (
+            <>
+              {/* 绣坊全景 */}
+              <div className="v5-zhuangxiu">
+                <img src="/assets/scenes/zhuangxiu_main.jpg" alt="绣坊" />
+                <div className="v5-zx-ov" />
+                <div className="v5-zx-label">
+                  <span className="zx-name">🏘️ 沈氏绣坊</span>
+                  <span className="zx-desc">苏南水乡 · 多层沿河而建</span>
+                </div>
+                {/* 绣坊功能入口 */}
+                <div className="v5-zx-buttons">
+                  <button className="v5-zx-btn main" onClick={() => { setView('scroll'); }}>📜 山河图卷</button>
+                </div>
+              </div>
+
+              {/* 游历入口：场景选择 */}
+              <div className="v5-travel-section">
+                <h4 className="v5-section-title">🗺️ 大好河山 · 点击场景开始游历</h4>
+                <div className="v5-scene-list">
+                  {SCENES.map(s => {
+                    const unlocked = g.unlockedScenes.includes(s.id);
+                    const repair = g.sceneRepair[s.id] || 0;
+                    const pieces = g.scrollPieces[s.id] || 0;
+                    const stages = ['🏚️破败', '🔨修缮', '🔨修缮', '✨完工'];
+                    return (
+                      <div key={s.id} className={`v5-scene-card ${!unlocked ? 'locked' : ''}`}>
+                        <div className="v5-sc-top" style={{ background: s.color + '18' }}>
+                          <span className="v5-sc-emoji">{s.id === 1 ? '🏘️' : s.id === 2 ? '⛰️' : '🌊'}</span>
+                          <div className="v5-sc-info">
+                            <span className="v5-sc-name" style={{ color: s.color }}>{s.name}</span>
+                            <span className="v5-sc-sub">{s.sub}</span>
+                          </div>
+                          <div className="v5-sc-status">
+                            <span className="v5-sc-stage">{stages[Math.min(3, repair)]}</span>
+                            <span className="v5-sc-pieces">📜 {pieces}/3</span>
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <p className="hint-v4">{game.selected ? '🔵 点击相同道具进行Merge-2合成' : '👆 点击选中道具，再点同类合成（消耗1心力）'}</p>
-          </div>
-        )}
-
-        {/* 场景修缮 */}
-        {tab === 'scene' && (
-          <div className="scene-panel-v4">
-            <h3 className="panel-h3">🗺️ 大好河山 · 修缮图鉴</h3>
-            {SCENES.map((s) => {
-              const unlocked = game.unlockedScenes.includes(s.id);
-              const repair = game.sceneRepair[s.id] || 0;
-              const stages = ['🏚️ 破败', '🔨 修缮中', '✨ 完工'];
-              return (
-                <div key={s.id} className={`scene-card-v4 ${!unlocked ? 'locked' : ''} ${game.currentScene === s.id ? 'current' : ''}`}>
-                  <img src={s.bg} className="sc-thumb" alt={s.name} />
-                  <div className="sc-info">
-                    <span className="sc-name" style={{ color: s.color }}>{s.name}</span>
-                    <span className="sc-sub">{s.sub} · {s.desc}</span>
-                    {unlocked ? (
-                      <>
-                        <div className="sc-stage">{stages[Math.min(2, repair)]} {repair >= 3 ? '✅' : `(${repair}/3)`}</div>
-                        {repair < 3 && (
-                          <button className="repair-btn" onClick={() => game.repairScene(s.id) ? msg(`🔨 ${s.name} 修缮进度+1！`) : msg('❌ 铜钱不足')}>
-                            修缮 ({[100, 300, 800][repair]}🪙)
-                          </button>
+                        {unlocked ? (
+                          <div className="v5-sc-actions">
+                            {pieces < 3 && (
+                              <button className="v5-sc-go" style={{ background: s.color }} onClick={() => startTravel(s.id)}>
+                                🗺️ 开始游历（收集图鉴残卷）
+                              </button>
+                            )}
+                            {repair < 3 && pieces >= 1 && (
+                              <button className="v5-sc-repair" onClick={() => g.repair(s.id) ? msg(`🔨 ${s.name}修缮+1！`) : msg('❌ 铜钱不足')}>
+                                🔨 修缮({[100, 300, 800][repair]}🪙)
+                              </button>
+                            )}
+                            {pieces >= 3 && repair >= 3 && <span className="v5-sc-done">✨ 已完工</span>}
+                          </div>
+                        ) : (
+                          <span className="v5-sc-lock">🔒 需{s.prestige}声望解锁</span>
                         )}
-                      </>
-                    ) : (
-                      <span className="sc-lock">🔒 需{ s.prestige}声望</span>
-                    )}
-                  </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* 订单 */}
-        {tab === 'order' && (
-          <div className="order-panel-v4">
-            <h3 className="panel-h3">📜 客商订单</h3>
-            {game.orders.map(o => {
-              const it = ITEMS[o.item];
-              const have = game.count(o.item);
-              return (
-                <div key={o.id} className={`order-card-v4 ${o.done ? 'done' : ''}`}>
-                  <span style={{ color: it.color, fontSize: 28 }}>{it.emoji}</span>
-                  <div className="oc-info">
-                    <span className="oc-name">{it.name} × {o.need}</span>
-                    <span className="oc-have">已有 {have}/{o.need}</span>
-                  </div>
-                  <span className="oc-reward">🪙 {o.reward}</span>
-                  {!o.done ? (
-                    <button className={`oc-btn ${have >= o.need ? '' : 'dis'}`} onClick={() => game.deliverOrder(o.id) ? msg(`📜 订单交付！+${o.reward}铜钱`) : msg('❌ 道具不足')}>
-                      {have >= o.need ? '交付' : `缺${o.need - have}`}
-                    </button>
-                  ) : <span className="oc-done">✅</span>}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* 图鉴 */}
-        {tab === 'scroll' && (
-          <div className="scroll-panel-v4">
-            <h3 className="panel-h3">📜 山河锦绣图</h3>
-            <div className="scroll-display-v4">
-              <img src="/assets/scenes/zhuangxiu_main.jpg" className="scroll-img-v4" alt="山河图" />
-              <div className="scroll-progress-v4">
-                <p>收集进度：{game.unlockedScenes.length}/7 处胜景</p>
-                <div className="scroll-bar"><div className="scroll-fill" style={{ width: `${(game.unlockedScenes.length / 7) * 100}%` }} /></div>
               </div>
-            </div>
-            <div className="item-gallery">
-              <h4>🧵 织造图鉴</h4>
-              <div className="gallery-grid">
-                {Object.entries(ITEMS).map(([k, v]) => (
-                  <div key={k} className="gallery-item">
-                    <span style={{ color: v.color, fontSize: 32 }}>{v.emoji}</span>
-                    <span className="gi-name">{v.name}</span>
-                    <span className="gi-lv">Lv.{v.level}</span>
+
+              {/* NPC */}
+              <div className="v5-npc-section">
+                <h4 className="v5-section-title">👥 历史名人</h4>
+                {NPCS.map(npc => (
+                  <div key={npc.id} className="v5-npc-card" onClick={() => setNpcDlg(npc.id)}>
+                    <span className="v5-npc-emoji">{npc.scene === 2 ? '⛰️' : '🌊'}</span>
+                    <div>
+                      <span className="v5-npc-name">{npc.name} · {npc.title}</span>
+                      <span className="v5-npc-loc">{SCENES.find(s => s.id === npc.scene)?.name}</span>
+                    </div>
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        )}
-      </div>
+            </>
+          )}
 
-      {/* NPC对话弹窗 */}
-      {npcDlg && NPCS[npcDlg] && (
-        <div className="dlg-overlay" onClick={() => setNpcDlg(null)}>
-          <div className="dlg-box" onClick={e => e.stopPropagation()}>
-            <button className="dlg-close" onClick={() => setNpcDlg(null)}>✕</button>
-            <img src={NPCS[npcDlg].img} className="dlg-img" alt={NPCS[npcDlg].name} />
-            <h4>{NPCS[npcDlg].name} · {NPCS[npcDlg].title}</h4>
-            <p className="dlg-txt">「{NPCS[npcDlg].dialogue}」</p>
-            <button className="dlg-btn" onClick={() => setNpcDlg(null)}>告辞</button>
+          {view === 'scroll' && (
+            <div className="v5-scroll-view">
+              <h4 className="v5-section-title">📜 山河锦绣图 · 收集进度</h4>
+              <div className="v5-scroll-main">
+                <img src="/assets/scenes/zhuangxiu_main.jpg" className="v5-scroll-img" alt="山河图" />
+                <p className="v5-scroll-total">
+                  已收集 {Object.values(g.scrollPieces).reduce((a, b) => a + b, 0)}/9 张残卷
+                </p>
+                <div className="v5-scroll-bar"><div className="v5-scroll-fill" style={{ width: `${(Object.values(g.scrollPieces).reduce((a, b) => a + b, 0) / 9) * 100}%` }} /></div>
+              </div>
+              {SCENES.map(s => (
+                <div key={s.id} className="v5-scroll-item">
+                  <span style={{ color: s.color }}>{s.name}</span>
+                  <div className="v5-scroll-pieces">
+                    {[1, 2, 3].map(i => (
+                      <span key={i} className={i <= (g.scrollPieces[s.id] || 0) ? 'has' : ''}>
+                        {i <= (g.scrollPieces[s.id] || 0) ? '📜' : '📄'}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <button className="v5-back" onClick={() => setView('home')}>↩ 返回绣坊</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 游历完成弹窗 */}
+      {showComplete && (
+        <div className="v5-modal">
+          <div className="v5-modal-box">
+            <div className="v5-star">⭐</div>
+            <h3>游历完成！</h3>
+            <p>你已完成{scene.name}的游历目标</p>
+            <div className="v5-rewards">
+              <span>📜 图鉴残卷 ×1</span>
+              <span>🪙 铜钱 +200</span>
+              <span>⭐ 声望 +30</span>
+            </div>
+            <button className="v5-modal-btn" onClick={completeTravel}>🏘️ 返回绣坊</button>
+          </div>
+        </div>
+      )}
+
+      {/* NPC弹窗 */}
+      {npcDlg && (
+        <div className="v5-modal" onClick={() => setNpcDlg(null)}>
+          <div className="v5-modal-box" onClick={e => e.stopPropagation()}>
+            <button className="v5-close" onClick={() => setNpcDlg(null)}>✕</button>
+            <h4>{NPCS.find(n => n.id === npcDlg)?.name} · {NPCS.find(n => n.id === npcDlg)?.title}</h4>
+            <p className="v5-dlg-txt">「{NPCS.find(n => n.id === npcDlg)?.dialogue}」</p>
+            <button className="v5-modal-btn" onClick={() => setNpcDlg(null)}>告辞</button>
           </div>
         </div>
       )}
 
       {/* Toast */}
-      {toast && <div className="toast-v4">{toast}</div>}
-
-      {/* 底部导航 */}
-      <div className="nav-v4">
-        <button className={tab === 'home' ? 'on' : ''} onClick={() => setTab('home')}><span>🏘️</span><label>绣坊</label></button>
-        <button className={tab === 'scene' ? 'on' : ''} onClick={() => setTab('scene')}><span>🗺️</span><label>山河</label></button>
-        <button className={tab === 'order' ? 'on' : ''} onClick={() => setTab('order')}><span>📜</span><label>订单</label>{game.orders.some(o => !o.done && game.count(o.item) >= o.need) && <b className="dot" />}</button>
-        <button className={tab === 'scroll' ? 'on' : ''} onClick={() => setTab('scroll')}><span>📜</span><label>图鉴</label></button>
-      </div>
+      {toast && <div className="v5-toast">{toast}</div>}
     </div>
   );
 }
